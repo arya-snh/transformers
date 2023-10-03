@@ -201,6 +201,10 @@ class ViTSelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
+        self.ema_attention_scores = None
+        self.ema_decay = 0.999 ##To be tuned
+
+
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(new_x_shape)
@@ -217,8 +221,17 @@ class ViTSelfAttention(nn.Module):
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        ## EDITED
+        # Converting attention_scores to EMA(attention_scores)
 
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        # Apply EMA to attention_scores
+        if self.ema_attention_scores is None:
+            ema_attention_scores = attention_scores.clone()
+        else:
+            ema_attention_scores = self.ema_decay * attention_scores + (1 - self.ema_decay) * ema_attention_scores
+
+        attention_scores = ema_attention_scores / math.sqrt(self.attention_head_size)
+        # attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
@@ -765,6 +778,7 @@ class ViTForMaskedImageModeling(ViTPreTrainedModel):
 )
 class ViTForImageClassification(ViTPreTrainedModel):
     def __init__(self, config: ViTConfig) -> None:
+        print("Using EMA decay = 0.999")
         super().__init__(config)
 
         self.num_labels = config.num_labels
